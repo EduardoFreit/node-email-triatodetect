@@ -11,13 +11,16 @@ import {onRequest} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as nodemailer from "nodemailer";
 import * as dotenv from "dotenv";
+import * as admin from "firebase-admin";
 
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript
 
+admin.initializeApp();
+dotenv.config();
+
 export const sendEmailWithAttachment = onRequest(async (request, response) => {
   try {
-    dotenv.config();
     const transporter = nodemailer.createTransport({
       service: process.env.EMAIL_SERVICE,
       auth: {
@@ -26,15 +29,27 @@ export const sendEmailWithAttachment = onRequest(async (request, response) => {
       },
     });
 
+    const db = admin.firestore();
+    const emailsCollection = await db.collection("Emails").listDocuments();
+    const listEmail = [];
+
+    for (const emailCol of emailsCollection) {
+      const email = await emailCol.get();
+      listEmail.push(email.get("email"));
+    }
+
+    const emailTo = listEmail.pop();
+
     const mailOptions = {
       from: process.env.EMAIL_FROM,
-      to: request.body.to,
-      subject: request.body.subject,
-      text: request.body.text,
+      to: emailTo,
+      subject: request.body.data.subject,
+      text: request.body.data.text,
+      cc: listEmail,
       attachments: [
         {
-          filename: "image.jpg",
-          content: request.body.imageBase64, // A imagem como base64
+          filename: "image.jpeg",
+          content: request.body.data.imageBase64, // A imagem como base64
           encoding: "base64",
         },
       ],
@@ -42,9 +57,9 @@ export const sendEmailWithAttachment = onRequest(async (request, response) => {
 
     await transporter.sendMail(mailOptions);
     logger.info("Email Enviado Com Sucesso!");
-    response.status(200).send();
+    response.status(200).send({});
   } catch (error) {
     logger.error("Email não foi Enviado!");
-    response.status(500).send();
+    response.status(500).send({});
   }
 });
